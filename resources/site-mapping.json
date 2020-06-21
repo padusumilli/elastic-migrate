@@ -1,0 +1,98 @@
+{
+  "index_patterns": "site*",
+  "settings": {
+	"index": {
+	  "refresh_interval": "30s",
+	  "number_of_shards": 1,
+	  "routing_partition_size": 1,
+	  "number_of_replicas": 0,
+	  "analysis": {
+		"analyzer": {
+		  "lower_case_analyzer": {
+			"tokenizer": "keyword",
+			"filter": [
+			  "lowercase"
+			]
+		  }
+		},
+		"normalizer": {
+		  "lower_case_normalizer": {
+			"type": "custom",
+			"filter": [
+			  "lowercase",
+			  "asciifolding"
+			]
+		  }
+		}
+	  }
+	}
+  },
+  "mappings": {
+	"_routing": {
+	  "required": true
+	},
+	"properties": {
+	  "createdTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "updatedTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "expiryTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "siteUuid": {
+		"type": "keyword"
+	  },
+	  "tenantUuid": {
+		"type": "keyword"
+	  },
+	  "type": {
+		"type": "keyword"
+	  },
+	  "timeZone": {
+		"type": "keyword"
+	  },
+	  "seats": {
+		"type": "integer"
+	  },
+	  "name": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  },
+	  "companyName": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  }
+	},
+	"dynamic_templates": [
+	  {
+		"string_fields": {
+		  "mapping": {
+			"omit_norms": true,
+			"type": "keyword"
+		  },
+		  "match_mapping_type": "string",
+		  "match": "*"
+		}
+	  }
+	]
+  },
+  "aliases": {
+  }
+}

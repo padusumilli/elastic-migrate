@@ -1,0 +1,105 @@
+{
+  "index_patterns": "idsrules-vipre*",
+  "settings": {
+	"index": {
+	  "refresh_interval": "-1",
+	  "number_of_shards": 1,
+	  "number_of_replicas": 0,
+	  "analysis": {
+		"analyzer": {
+		  "lower_case_analyzer": {
+			"tokenizer": "keyword",
+			"filter": [
+			  "lowercase"
+			]
+		  }
+		},
+		"normalizer": {
+		  "lower_case_normalizer": {
+			"type": "custom",
+			"filter": [
+			  "lowercase",
+			  "asciifolding"
+			]
+		  }
+		}
+	  }
+	}
+  },
+  "mappings": {
+	"properties": {
+	  "created": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "updated": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "siteUuid": {
+		"type": "keyword"
+	  },
+	  "uuid": {
+		"type": "keyword"
+	  },
+	  "ruleId": {
+		"type": "integer"
+	  },
+	  "rev": {
+		"type": "integer"
+	  },
+	  "category": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  },
+	  "severity": {
+		"type": "keyword"
+	  },
+	  "ruleSeverity": {
+		"type": "integer"
+	  },
+	  "ruleName": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  },
+	  "releaseTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "md5": {
+		"type": "keyword"
+	  },
+	  "contentType": {
+		"type": "keyword"
+	  },
+	  "version": {
+		"type": "keyword"
+	  }
+	},
+	"dynamic_templates": [
+	  {
+		"string_fields": {
+		  "mapping": {
+			"omit_norms": true,
+			"type": "keyword"
+		  },
+		  "match_mapping_type": "string",
+		  "match": "*"
+		}
+	  }
+	]
+  },
+  "aliases": {}
+}

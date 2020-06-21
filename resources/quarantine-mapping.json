@@ -1,0 +1,62 @@
+{
+  "index_patterns": "quarantine*",
+  "settings": {
+    "index": {
+      "refresh_interval": "-1",
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    }
+  },
+  "mappings": {
+    "_routing": {
+      "required": true
+    },
+    "properties": {
+      "eventType": {
+        "type": "join",
+        "relations": {
+          "quarantine": "quarantine-event"
+        }
+      },
+      "timestamp": {
+        "type": "date",
+        "format": "epoch_millis"
+      },
+      "quarantineUuid": {
+        "type": "keyword"
+      },
+      "agentUuid": {
+        "type": "keyword"
+      },
+      "refUuid": {
+        "type": "keyword"
+      },
+      "siteUuid": {
+        "type": "keyword"
+      },
+      "tenantUuid": {
+        "type": "keyword"
+      },
+      "quarantineId": {
+        "type": "keyword"
+      },
+      "category": {
+        "type": "keyword"
+      }
+    },
+    "dynamic_templates": [
+      {
+        "string_fields": {
+          "mapping": {
+            "omit_norms": true,
+            "type": "keyword"
+          },
+          "match_mapping_type": "string",
+          "match": "*"
+        }
+      }
+    ]
+  },
+  "aliases": {
+  }
+}

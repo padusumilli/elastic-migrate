@@ -1,0 +1,69 @@
+{
+  "index_patterns": "scans*",
+  "settings": {
+	"index": {
+	  "refresh_interval": "-1",
+	  "number_of_shards": 1,
+	  "number_of_replicas": 0
+	}
+  },
+  "mappings": {
+	"_routing": {
+	  "required": true
+	},
+	"properties": {
+	  "startTime": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "endTime": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "siteUuid": {
+		"type": "keyword"
+	  },
+	  "tenantUuid": {
+		"type": "keyword"
+	  },
+	  "uuid": {
+		"type": "keyword"
+	  },
+	  "agent": {
+		"properties": {
+		  "agentUuid": {
+			"type": "keyword"
+		  },
+		  "policyUuid": {
+			"type": "keyword"
+		  },
+		  "macAddress": {
+			"type": "keyword"
+		  },
+		  "softwareVersion": {
+			"type": "keyword"
+		  },
+		  "loggedInUser": {
+			"type": "keyword"
+		  },
+		  "name": {
+			"type": "keyword"
+		  }
+		}
+	  }
+	},
+	"dynamic_templates": [
+	  {
+		"string_fields": {
+		  "mapping": {
+			"omit_norms": true,
+			"type": "keyword"
+		  },
+		  "match_mapping_type": "string",
+		  "match": "*"
+		}
+	  }
+	]
+  },
+  "aliases": {}
+}

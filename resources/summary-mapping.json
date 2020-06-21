@@ -1,0 +1,43 @@
+{
+  "index_patterns": "summary*",
+  "settings": {
+	"index": {
+	  "refresh_interval": "-1",
+	  "number_of_shards": 1,
+	  "number_of_replicas": 0
+	}
+  },
+  "mappings": {
+	"_routing": {
+	  "required": true
+	},
+	"properties": {
+	  "timestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "count": {
+		"type": "long"
+	  },
+	  "siteUuid": {
+		"type": "keyword"
+	  },
+	  "type": {
+		"type": "keyword"
+	  }
+	},
+	"dynamic_templates": [
+	  {
+		"string_fields": {
+		  "mapping": {
+			"omit_norms": true,
+			"type": "keyword"
+		  },
+		  "match_mapping_type": "string",
+		  "match": "*"
+		}
+	  }
+	]
+  },
+  "aliases": {}
+}
