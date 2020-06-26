@@ -33,10 +33,24 @@ es_new_url = es_new_scheme + '://' + es_new_user + ':' + es_new_pwd + '@' + es_n
 # new es7 connection
 es_new = Elasticsearch(es_new_url, verify_certs=False, timeout=60)
 
+exclude_current_index = True
+
 # list of indices pattern that are to be migrated to new cluster
 # indices = ['agent', 'site_v1', 'idsrules-vipre*', 'exclusions*']  # , 'audit-2017*']
-# indices = ['threat-2017', 'summary-2017*', 'scans-2017*', 'quarantine-2017*', 'incident-2017*']
-indices = ['quarantine-2018*']
+# indices = ['threat-2017*', 'summary-2017*', 'scans-2017*', 'quarantine-2017*', 'incident-2017*']
+# indices = ['quarantine-2019*']
+
+indices = {
+	"quarantine-2017*": "weekly",
+	"threats-2017*": "monthly",
+	"summary-2017*": "monthly",
+	"scans-2017*": "monthly",
+	"incident-2017*": "monthly",
+	"agent": "single",
+	"site_v1": "single",
+	"idsrules-vipre*": "single",
+	"exclusions*": "single"
+}
 
 # indices that require aliases
 aliases = {
@@ -72,57 +86,80 @@ def migrate():
 	print 'Migrating from ' + es_old_host + ' to ' + es_new_host + '\n'
 	total_doc_count = 0
 	add_index_templates()
-	for index_pattern in indices:
+	for index_pattern in indices.keys():
 		print '\nMigrating ' + index_pattern + " " + cur_time()
 		old_cat_indices = []
 		if es_old.indices.exists(index=index_pattern):
 			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
 
-		# new_cat_indices = []
-		# if es_new.indices.exists(index=index_pattern):
-		# 	new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
+		new_cat_indices = []
+		index_duration = indices[index_pattern]
+		if index_duration == "weekly":
+			if es_new.indices.exists(index=index_pattern):
+				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
+		elif index_duration == "monthly":
+			res_old = es_old.count(index=index_pattern)
+			res_new = es_new.count(index=index_pattern)
+			if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+				print "Doc count for monthly indices for pattern " + index_pattern + " matched. Skipping to next index"
+				continue
 
 		old_index_counts = {}
 		for index_stat in old_cat_indices:
 			index = trim_index(index_stat['index'])
 			old_index_counts[index] = index_stat['docs.count']
 
-		# new_index_counts = {}
-		# for index_stat in new_cat_indices:
-		# 	new_index_counts[index_stat['index']] = index_stat['docs.count']
+		new_index_counts = {}
+		for index_stat in new_cat_indices:
+			new_index_counts[index_stat['index']] = index_stat['docs.count']
 
 		total_index_type_count = 0
 		total_old_index_type_count = 0
 		for index in sorted(es_old.indices.get(index_pattern)):
+
+			# Exclude current index from migration
+			if exclude_current_index and index_duration.lower() in ("weekly", "monthly") \
+					and index == target_index(index, index_duration):
+				print "Skipping current index " + index
+				continue
+
 			index = trim_index(index)
 			count = int(old_index_counts[index]) if index in old_index_counts else 0
-			if es_new.indices.exists(index):
-				print "Deleting older index " + index
-				es_new.indices.delete(index)
 
-			# migrate index to new cluster
-			output = reindex(index)
-			task_status = es_new.tasks.get(output['task'], timeout='1m')
-			while not task_status['completed']:
-				time.sleep(5)
-				task_status = es_new.tasks.get(output['task'], timeout='1m')
-
-			if 'error' in task_status:
-				print task_status['error']['caused_by']
+			# if index count match, skip to the next index
+			reindexed_count = int(new_index_counts[index]) if index in new_index_counts else 0
+			if count is not None and reindexed_count is not None and reindexed_count == count:
+				print index + ' counts match in new cluster, skipping...'
 			else:
-				response = task_status['response']
-				total_old_index_type_count += count
-				total_index_type_count += response['total']
-				print cur_time() + " - Migrated " + index + " with " + str(response['total']) + " documents in " + str(
-					response['took']) + "ms"
+				if es_new.indices.exists(index):
+					print "Deleting older index " + index
+					es_new.indices.delete(index)
 
-		if total_old_index_type_count == total_index_type_count:
-			print "Index pattern " + index_pattern + " successfully migrated. " + str(
-				total_index_type_count) + " documents migrated."
-		else:
-			print "Count mismatched migrating index pattern " + index_pattern + ". " + str(
-				total_index_type_count) + " docs migrated while " + str(
-				total_old_index_type_count) + " found in old cluster."
+				# migrate index to new cluster
+				output = reindex(index)
+				task_status = es_new.tasks.get(output['task'], timeout='1m')
+				while not task_status['completed']:
+					time.sleep(5)
+					task_status = es_new.tasks.get(output['task'], timeout='1m')
+
+				if 'error' in task_status:
+					print task_status['error']['caused_by']
+				else:
+					response = task_status['response']
+					total_old_index_type_count += count
+					total_index_type_count += response['total']
+					print cur_time() + " - Migrated " + index + " with " + str(
+						response['total']) + " documents in " + str(
+						response['took']) + "ms"
+
+			if total_old_index_type_count == total_index_type_count:
+				print "Index pattern " + index_pattern + " successfully migrated. " + str(
+					total_index_type_count) + " documents migrated."
+			else:
+				print "Count mismatched migrating index pattern " + index_pattern + ". " + str(
+					total_index_type_count) + " docs migrated while " + str(
+					total_old_index_type_count) + " found in old cluster."
+
 		print "Indexed " + str(total_index_type_count) + " docs for " + index_pattern
 		total_doc_count += total_index_type_count
 
@@ -130,6 +167,22 @@ def migrate():
 	# add index aliases
 	add_aliases()
 	update_settings()
+
+
+def target_index(index, index_duration):
+	if index_duration.lower() in ("weekly", "monthly"):
+		idx = trim_index(index)
+		idx = idx[:idx.index("-")]
+		ts = int(round(time.time() * 1000))
+
+		if index_duration == "monthly":
+			date = datetime.fromtimestamp(ts / 1e3)
+			return idx + "-{}-{:02}".format(date.year, date.month)
+		else:
+			date = datetime.fromtimestamp(ts / 1e3)
+			return idx + "-{}-w{:02}".format(date.year, date.isocalendar()[1])
+	else:
+		return index
 
 
 def trim_index(index):
@@ -170,19 +223,11 @@ def reindex(index):
 	new_index = trim_index(index)
 	print cur_time() + " - Migrating index " + index
 	if 'quarantine' in index:
-		response = es_new.reindex({"source": {
-			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index,
-			"query": {"match": {"_type": "quarantine"}}, },
+		return es_new.reindex({"source": {
+			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
 			"dest": {"index": new_index},
 			"script": {
-				"source": "DateTimeFormatter dtf = DateTimeFormatter.ofPattern(\"yyyy-MM\");"
-						  "LocalDateTime dateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(ctx._source.timestamp), ZoneOffset.UTC);"
-						  "int loc = ctx._index.indexOf('v2-');"
-						  "if (loc == 0) {"
-						  "ctx._index = ctx._index.substring(loc+3);"
-						  "}"
-						  "ctx._index = ctx._index.substring(0, ctx._index.indexOf('-')) + '-' + dateTime.format(dtf);"
-						  "if (ctx._type == 'event') {"
+				"source": "if (ctx._type == 'event') {"
 						  "ctx._source.eventType = [:];"
 						  "ctx._source.eventType['parent'] = ctx._source.quarantineId;"
 						  "ctx._source.eventType['name'] = 'quarantine-event';"
@@ -190,9 +235,6 @@ def reindex(index):
 						  "ctx._source.eventType = 'quarantine';"
 						  "}"}},
 			wait_for_completion=False, request_timeout=30, refresh=True)
-
-		reindex_quarantine_events(index)
-		return response
 	elif 'ids' in index:
 		return es_new.reindex({"source": {
 			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
