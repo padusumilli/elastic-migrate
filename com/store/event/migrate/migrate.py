@@ -41,11 +41,11 @@ exclude_current_index = True
 # indices = ['quarantine-2019*']
 
 indices = {
-	"quarantine-2017*": "weekly",
-	"threats-2017*": "monthly",
-	"summary-2017*": "monthly",
-	"scans-2017*": "monthly",
-	"incident-2017*": "monthly",
+	"quarantine-2019*": "weekly",
+	"threats-2019*": "monthly",
+	"summary-2019*": "monthly",
+	"scans-2019*": "monthly",
+	"incident-2019*": "monthly",
 	"agent": "single",
 	"site_v1": "single",
 	"idsrules-vipre*": "single",
@@ -55,8 +55,8 @@ indices = {
 # indices that require aliases
 aliases = {
 	"site_v1": "site",
-	"exclusions-vipre-2019.11.01-5398": "exclusions-vipre",
-	"idsrules-vipre-2018.03.07-62770": "idsrules-vipre"
+	"exclusions-vipre-2020.06.12-32851": "exclusions-vipre",
+	"idsrules-vipre-2020.06.15-61651": "idsrules-vipre"
 }
 
 templates = {
@@ -137,10 +137,7 @@ def migrate():
 
 				# migrate index to new cluster
 				output = reindex(index)
-				task_status = es_new.tasks.get(output['task'], timeout='1m')
-				while not task_status['completed']:
-					time.sleep(5)
-					task_status = es_new.tasks.get(output['task'], timeout='1m')
+				task_status = retry(check_task_status, output)
 
 				if 'error' in task_status:
 					print task_status['error']['caused_by']
@@ -167,6 +164,23 @@ def migrate():
 	# add index aliases
 	add_aliases()
 	update_settings()
+
+
+def retry(fun, task, max_tries=10):
+	for i in range(max_tries):
+		try:
+			return fun(task)
+		except Exception as ex:
+			print("Error: {0}, Retrying!".format(ex))
+			continue
+
+
+def check_task_status(output):
+	task_status = es_new.tasks.get(output['task'], timeout='1m')
+	while not task_status['completed']:
+		time.sleep(5)
+		task_status = es_new.tasks.get(output['task'], timeout='1m')
+	return task_status
 
 
 def target_index(index, index_duration):
@@ -364,9 +378,6 @@ def reindex_quarantine_events(index):
 
 		# Get the number of results that returned in the last scroll
 		scroll_size = len(data['hits']['hits'])
-
-
-# def process_quarantine_events():
 
 
 if __name__ == '__main__':
