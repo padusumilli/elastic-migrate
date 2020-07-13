@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+import argparse
 import pkgutil
 import time
 from datetime import datetime
@@ -11,23 +12,38 @@ from elasticsearch5 import Elasticsearch as Elasticsearch5
 # disable ssl insecure host warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+parser = argparse.ArgumentParser(description='Migrate data from elastic 5 to elastic 7')
+parser.add_argument('-s', '--source', type=str, metavar='SRC', required=True, help='Host value for elastic 5')
+parser.add_argument('-sp', '--source-port', type=int, metavar='', required=False, default=9243, help='Port of elastic 5 host')
+parser.add_argument('-su', '--source-user', type=str, metavar='', required=False, default='elastic', help='User for elastic 5 host')
+parser.add_argument('-spwd', '--source-pwd', type=str, metavar='pwd', required=True, help='Password for elastic 5')
+parser.add_argument('-ss', '--source-scheme', type=str, metavar='', required=False, default='https', help='Scheme for elastic 5')
+
+parser.add_argument('-t', '--target', type=str, metavar='TGT', required=True, help='Host value for elastic 7')
+parser.add_argument('-tp', '--target-port', type=int, metavar='', required=False, default=9243, help='Port of elastic 7 host')
+parser.add_argument('-tu', '--target-user', type=str, metavar='', required=False, default='elastic', help='User for elastic 7 host')
+parser.add_argument('-tpwd', '--target-pwd', type=str, metavar='pwd', required=True, help='Password for elastic 7')
+parser.add_argument('-ts', '--target-scheme', type=str, metavar='', required=False, default='https', help='Scheme for elastic 7')
+
+args = parser.parse_args()
+
 # old es5 host details
-es_old_host = '9ca6245f7ae74d239b6c9040d6997c54.us-east-1.aws.found.io'
-es_old_port = 9243
-es_old_user = 'elastic'
-es_old_pwd = 'lONlBpimkkf5tpgzGbBz7aoL'
-es_old_scheme = 'https'
+es_old_host = args.source  # '9ca6245f7ae74d239b6c9040d6997c54.us-east-1.aws.found.io'
+es_old_port = args.source_port  # 9243
+es_old_user = args.source_user  # 'elastic'
+es_old_pwd = args.source_pwd  # 'lONlBpimkkf5tpgzGbBz7aoL'
+es_old_scheme = args.source_scheme  # 'https'
 es_old_url = es_old_scheme + '://' + es_old_user + ':' + es_old_pwd + '@' + es_old_host + ':' + str(es_old_port)
 
 # old es5 connection
 es_old = Elasticsearch5(es_old_url, verify_certs=False, timeout=60)
 
 # new es7 host details
-es_new_host = 'a62f208a43674c6fb4801e28fa019d12.us-east-1.aws.found.io'
-es_new_port = 9243
-es_new_user = 'elastic'
-es_new_pwd = '1MNxU3xauiu8lapBTLIKr5KY'
-es_new_scheme = 'https'
+es_new_host = args.target  # 'a62f208a43674c6fb4801e28fa019d12.us-east-1.aws.found.io'
+es_new_port = args.target_port  # 9243
+es_new_user = args.target_user  # 'elastic'
+es_new_pwd = args.target_pwd  # '1MNxU3xauiu8lapBTLIKr5KY'
+es_new_scheme = args.target_scheme  # 'https'
 es_new_url = es_new_scheme + '://' + es_new_user + ':' + es_new_pwd + '@' + es_new_host + ':' + str(es_new_port)
 
 # new es7 connection
