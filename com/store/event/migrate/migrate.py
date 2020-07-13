@@ -33,6 +33,7 @@ es_new_url = es_new_scheme + '://' + es_new_user + ':' + es_new_pwd + '@' + es_n
 # new es7 connection
 es_new = Elasticsearch(es_new_url, verify_certs=False, timeout=60)
 
+# flag to exclude current index
 exclude_current_index = True
 
 # list of indices pattern that are to be migrated to new cluster
@@ -118,8 +119,8 @@ def migrate():
 		for index in sorted(es_old.indices.get(index_pattern)):
 
 			# Exclude current index from migration
-			if exclude_current_index and index_duration.lower() in ("weekly", "monthly") \
-					and index == target_index(index, index_duration):
+			if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index == target_index(
+					index, index_duration)) or (index_duration.lower() == "single")):
 				print "Skipping current index " + index
 				continue
 
