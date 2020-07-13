@@ -14,36 +14,42 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 parser = argparse.ArgumentParser(description='Migrate data from elastic 5 to elastic 7')
 parser.add_argument('-s', '--source', type=str, metavar='SRC', required=True, help='Host value for elastic 5')
-parser.add_argument('-sp', '--source-port', type=int, metavar='', required=False, default=9243, help='Port of elastic 5 host')
-parser.add_argument('-su', '--source-user', type=str, metavar='', required=False, default='elastic', help='User for elastic 5 host')
+parser.add_argument('-sp', '--source-port', type=int, metavar='', required=False, default=9243,
+					help='Port of elastic 5 host')
+parser.add_argument('-su', '--source-user', type=str, metavar='', required=False, default='elastic',
+					help='User for elastic 5 host')
 parser.add_argument('-spwd', '--source-pwd', type=str, metavar='pwd', required=True, help='Password for elastic 5')
-parser.add_argument('-ss', '--source-scheme', type=str, metavar='', required=False, default='https', help='Scheme for elastic 5')
+parser.add_argument('-ss', '--source-scheme', type=str, metavar='', required=False, default='https',
+					help='Scheme for elastic 5')
 
 parser.add_argument('-t', '--target', type=str, metavar='TGT', required=True, help='Host value for elastic 7')
-parser.add_argument('-tp', '--target-port', type=int, metavar='', required=False, default=9243, help='Port of elastic 7 host')
-parser.add_argument('-tu', '--target-user', type=str, metavar='', required=False, default='elastic', help='User for elastic 7 host')
+parser.add_argument('-tp', '--target-port', type=int, metavar='', required=False, default=9243,
+					help='Port of elastic 7 host')
+parser.add_argument('-tu', '--target-user', type=str, metavar='', required=False, default='elastic',
+					help='User for elastic 7 host')
 parser.add_argument('-tpwd', '--target-pwd', type=str, metavar='pwd', required=True, help='Password for elastic 7')
-parser.add_argument('-ts', '--target-scheme', type=str, metavar='', required=False, default='https', help='Scheme for elastic 7')
+parser.add_argument('-ts', '--target-scheme', type=str, metavar='', required=False, default='https',
+					help='Scheme for elastic 7')
 
 args = parser.parse_args()
 
 # old es5 host details
-es_old_host = args.source  # '9ca6245f7ae74d239b6c9040d6997c54.us-east-1.aws.found.io'
-es_old_port = args.source_port  # 9243
-es_old_user = args.source_user  # 'elastic'
-es_old_pwd = args.source_pwd  # 'lONlBpimkkf5tpgzGbBz7aoL'
-es_old_scheme = args.source_scheme  # 'https'
+es_old_host = args.source
+es_old_port = args.source_port
+es_old_user = args.source_user
+es_old_pwd = args.source_pwd
+es_old_scheme = args.source_scheme
 es_old_url = es_old_scheme + '://' + es_old_user + ':' + es_old_pwd + '@' + es_old_host + ':' + str(es_old_port)
 
 # old es5 connection
 es_old = Elasticsearch5(es_old_url, verify_certs=False, timeout=60)
 
 # new es7 host details
-es_new_host = args.target  # 'a62f208a43674c6fb4801e28fa019d12.us-east-1.aws.found.io'
-es_new_port = args.target_port  # 9243
-es_new_user = args.target_user  # 'elastic'
-es_new_pwd = args.target_pwd  # '1MNxU3xauiu8lapBTLIKr5KY'
-es_new_scheme = args.target_scheme  # 'https'
+es_new_host = args.target
+es_new_port = args.target_port
+es_new_user = args.target_user
+es_new_pwd = args.target_pwd
+es_new_scheme = args.target_scheme
 es_new_url = es_new_scheme + '://' + es_new_user + ':' + es_new_pwd + '@' + es_new_host + ':' + str(es_new_port)
 
 # new es7 connection
@@ -154,7 +160,7 @@ def migrate():
 
 				# migrate index to new cluster
 				output = reindex(index)
-				task_status = retry(check_task_status, output)
+				task_status = retry(get_task_status, output)
 
 				if 'error' in task_status:
 					print task_status['error']['caused_by']
@@ -178,11 +184,13 @@ def migrate():
 		total_doc_count += total_index_type_count
 
 	print "Indexed " + str(total_doc_count) + " docs"
+
 	# add index aliases
 	add_aliases()
 	update_settings()
 
 
+# Add retry to elastic calls to account for temporary connectivity issues
 def retry(fun, task, max_tries=10):
 	for i in range(max_tries):
 		try:
@@ -192,7 +200,8 @@ def retry(fun, task, max_tries=10):
 			continue
 
 
-def check_task_status(output):
+# Method to retrieve the status of reindex job
+def get_task_status(output):
 	task_status = es_new.tasks.get(output['task'], timeout='1m')
 	while not task_status['completed']:
 		time.sleep(5)
@@ -200,6 +209,8 @@ def check_task_status(output):
 	return task_status
 
 
+# Compute target index name form the source index. This methods converts the weekly/monthly index names to
+# monthly index names in target cluster
 def target_index(index, index_duration):
 	if index_duration.lower() in ("weekly", "monthly"):
 		idx = trim_index(index)
