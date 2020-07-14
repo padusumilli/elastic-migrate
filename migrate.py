@@ -1,12 +1,13 @@
 #! /usr/bin/env python3
 import argparse
+import calendar
 import pkgutil
+import re
 import time
-from datetime import datetime
+import datetime
 
 import urllib3
 from elasticsearch import Elasticsearch
-from elasticsearch import helpers
 from elasticsearch5 import Elasticsearch as Elasticsearch5
 
 # disable ssl insecure host warnings
@@ -30,6 +31,10 @@ parser.add_argument('-tu', '--target-user', type=str, metavar='', required=False
 parser.add_argument('-tpwd', '--target-pwd', type=str, metavar='pwd', required=True, help='Password for elastic 7')
 parser.add_argument('-ts', '--target-scheme', type=str, metavar='', required=False, default='https',
 					help='Scheme for elastic 7')
+
+group = parser.add_mutually_exclusive_group()
+group.add_argument("-m", "--migrate", action='store_true', help='Run migration')
+group.add_argument("-v", "--verify", action='store_true', help='Verify migration')
 
 args = parser.parse_args()
 
@@ -64,15 +69,15 @@ exclude_current_index = True
 # indices = ['quarantine-2019*']
 
 indices = {
-	"quarantine-2019*": "weekly",
 	"threats-2019*": "monthly",
-	"summary-2019*": "monthly",
-	"scans-2019*": "monthly",
-	"incident-2019*": "monthly",
-	"agent": "single",
-	"site_v1": "single",
-	"idsrules-vipre*": "single",
-	"exclusions*": "single"
+	# "quarantine-2019*": "weekly",
+	# "summary-2019*": "monthly",
+	# "scans-2019*": "monthly",
+	# "incident-2019*": "monthly",
+	# "agent": "single",
+	# "site_v1": "single",
+	# "idsrules-vipre*": "single",
+	# "exclusions*": "single"
 }
 
 # indices that require aliases
@@ -100,17 +105,117 @@ templates = {
 # Add index templates for the new cluster
 def add_index_templates():
 	for template in templates:
-		print 'Adding template ' + templates[template]
-		audit = pkgutil.get_data('resources', templates[template])
-		es_new.indices.put_template(template, audit)
+		print("Adding template " + templates[template])
+		data = pkgutil.get_data('resources', templates[template])
+		es_new.indices.put_template(template, data)
+
+
+def verify():
+	print("Verifying migrated data from " + es_old_host + " to " + es_new_host + "\n")
+	for index_pattern in indices.keys():
+		print(cur_time() + " - Verifying " + index_pattern)
+		index_duration = indices[index_pattern]
+		old_cat_indices = []
+		if es_old.indices.exists(index=index_pattern):
+			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
+
+		new_cat_indices = []
+		if index_duration == "weekly":
+			if es_new.indices.exists(index=index_pattern):
+				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
+
+			old_index_counts = {}
+			for index_stat in old_cat_indices:
+				index = trim_index(index_stat['index'])
+				old_index_counts[index] = index_stat['docs.count']
+
+			new_index_counts = {}
+			for index_stat in new_cat_indices:
+				new_index_counts[index_stat['index']] = index_stat['docs.count']
+
+			for index in sorted(es_old.indices.get(index_pattern)):
+				index = trim_index(index)
+				count = int(old_index_counts[index]) if index in old_index_counts else 0
+
+				# if index count match, skip to the next index
+				reindexed_count = int(new_index_counts[index]) if index in new_index_counts else 0
+				if count is not None and reindexed_count is not None and reindexed_count == count:
+					print(index + " counts match in new cluster. Found " + str(count) + " docs")
+				else:
+					print(index + " counts DOES NOT match in new cluster. Found " + str(
+						count) + " docs in old cluster and " + str(reindexed_count) + " in new cluster")
+		elif index_duration == "monthly":
+			years = set(map(lambda x: index_year(x), sorted(es_old.indices.get(index_pattern))))
+			"""
+			iterate through the each month of the
+			"""
+			for year in sorted(years):
+				print("Verifying " + index_pattern + " for year " + str(year))
+				year_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "*"
+				res_old = es_old.count(index=index_pattern)
+				res_new = es_new.count(index=index_pattern)
+				if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+					print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+				else:
+					print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
+						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+
+				# for i in range(1, 12):
+				# 	date = datetime.datetime(year, i, 1)
+				# 	month_range = get_month_day_range(date)
+				# 	q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
+				# 	res_old = es_old.count(index=index_pattern, body=q)
+				#
+				# 	month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
+				# 	res_new = es_new.count(index=month_index)
+				# 	if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+				# 		print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+				# 	else:
+				# 		print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
+				# 			res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+		elif index_duration == "single":
+			res_old = es_old.count(index=index_pattern)
+			res_new = es_new.count(index=index_pattern)
+			if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+				print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+			else:
+				print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
+					res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+
+
+def index_year(index):
+	match = re.match('\\w*-([0-9]*)-\\w*', trim_index(index))
+	if match:
+		return int(match.group(1))
+	else:
+		return -1
+
+
+def get_month_day_range(dt):
+	"""
+	For a date 'date' returns the start and end date for the month of 'date'.
+
+	Month with 31 days:
+	>>> date = dt.date(2011, 7, 27)
+	>>> get_month_day_range(date)
+	(datetime.date(2011, 7, 1), datetime.date(2011, 7, 31))
+
+	Month with 28 days:
+	>>> date = dt.date(2011, 2, 15)
+	>>> get_month_day_range(date)
+	(datetime.date(2011, 2, 1), datetime.date(2011, 2, 28))
+	"""
+	first_day = dt.replace(day=1)
+	last_day = dt.replace(hour=23, minute=59, second=59, day=calendar.monthrange(dt.year, dt.month)[1])
+	return int(first_day.strftime('%s000')), int(last_day.strftime('%s999'))
 
 
 def migrate():
-	print 'Migrating from ' + es_old_host + ' to ' + es_new_host + '\n'
+	print("Migrating from " + es_old_host + " to " + es_new_host + "\n")
 	total_doc_count = 0
 	add_index_templates()
 	for index_pattern in indices.keys():
-		print '\nMigrating ' + index_pattern + " " + cur_time()
+		print("\nMigrating " + index_pattern + " " + cur_time())
 		old_cat_indices = []
 		if es_old.indices.exists(index=index_pattern):
 			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
@@ -124,7 +229,7 @@ def migrate():
 			res_old = es_old.count(index=index_pattern)
 			res_new = es_new.count(index=index_pattern)
 			if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-				print "Doc count for monthly indices for pattern " + index_pattern + " matched. Skipping to next index"
+				print("Doc count for monthly indices for pattern " + index_pattern + " matched. Skipping to next index")
 				continue
 
 		old_index_counts = {}
@@ -143,7 +248,7 @@ def migrate():
 			# Exclude current index from migration
 			if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index == target_index(
 					index, index_duration)) or (index_duration.lower() == "single")):
-				print "Skipping current index " + index
+				print("Skipping current index " + index)
 				continue
 
 			index = trim_index(index)
@@ -152,10 +257,10 @@ def migrate():
 			# if index count match, skip to the next index
 			reindexed_count = int(new_index_counts[index]) if index in new_index_counts else 0
 			if count is not None and reindexed_count is not None and reindexed_count == count:
-				print index + ' counts match in new cluster, skipping...'
+				print(index + " counts match in new cluster, skipping...")
 			else:
 				if es_new.indices.exists(index):
-					print "Deleting older index " + index
+					print("Deleting older index " + index)
 					es_new.indices.delete(index)
 
 				# migrate index to new cluster
@@ -163,27 +268,27 @@ def migrate():
 				task_status = retry(get_task_status, output)
 
 				if 'error' in task_status:
-					print task_status['error']['caused_by']
+					print(task_status['error']['caused_by'])
 				else:
 					response = task_status['response']
 					total_old_index_type_count += count
 					total_index_type_count += response['total']
-					print cur_time() + " - Migrated " + index + " with " + str(
+					print(cur_time() + " - Migrated " + index + " with " + str(
 						response['total']) + " documents in " + str(
-						response['took']) + "ms"
+						response['took']) + "ms")
 
 			if total_old_index_type_count == total_index_type_count:
-				print "Index pattern " + index_pattern + " successfully migrated. " + str(
-					total_index_type_count) + " documents migrated."
+				print("Index pattern " + index_pattern + " successfully migrated. " + str(
+					total_index_type_count) + " documents migrated.")
 			else:
-				print "Count mismatched migrating index pattern " + index_pattern + ". " + str(
+				print("Count mismatched migrating index pattern " + index_pattern + ". " + str(
 					total_index_type_count) + " docs migrated while " + str(
-					total_old_index_type_count) + " found in old cluster."
+					total_old_index_type_count) + " found in old cluster.")
 
-		print "Indexed " + str(total_index_type_count) + " docs for " + index_pattern
+		print("Indexed " + str(total_index_type_count) + " docs for " + index_pattern)
 		total_doc_count += total_index_type_count
 
-	print "Indexed " + str(total_doc_count) + " docs"
+	print("Indexed " + str(total_doc_count) + " docs")
 
 	# add index aliases
 	add_aliases()
@@ -218,10 +323,10 @@ def target_index(index, index_duration):
 		ts = int(round(time.time() * 1000))
 
 		if index_duration == "monthly":
-			date = datetime.fromtimestamp(ts / 1e3)
+			date = datetime.datetime.fromtimestamp(ts / 1e3)
 			return idx + "-{}-{:02}".format(date.year, date.month)
 		else:
-			date = datetime.fromtimestamp(ts / 1e3)
+			date = datetime.datetime.fromtimestamp(ts / 1e3)
 			return idx + "-{}-w{:02}".format(date.year, date.isocalendar()[1])
 	else:
 		return index
@@ -233,7 +338,7 @@ def trim_index(index):
 
 
 def cur_time():
-	now = datetime.now()
+	now = datetime.datetime.now()
 	current_time = now.strftime("%H:%M:%S")
 	return current_time
 
@@ -242,7 +347,7 @@ def cur_time():
 def update_settings():
 	for index_pattern in indices:
 		new_index = trim_index(index_pattern)
-		print '\nUpdating index settings for ' + new_index
+		print("\nUpdating index settings for " + new_index)
 		for index in sorted(es_new.indices.get(new_index)):
 			# set refresh interval and replica count on the new index
 			es_new.indices.put_settings(index=index,
@@ -254,16 +359,16 @@ def update_settings():
 
 # Add aliases for indices in the new cluster
 def add_aliases():
-	print "\nAdding index aliases"
+	print("\nAdding index aliases")
 	for alias in aliases:
-		print 'Adding alias ' + aliases[alias] + ' to index ' + alias
+		print("Adding alias " + aliases[alias] + " to index " + alias)
 		es_new.indices.put_alias(alias, aliases[alias])
 
 
 # method to reindex from old es cluster to new
 def reindex(index):
 	new_index = trim_index(index)
-	print cur_time() + " - Migrating index " + index
+	print(cur_time() + " - Migrating index " + index)
 	if 'quarantine' in index:
 		return es_new.reindex({"source": {
 			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
@@ -337,4 +442,9 @@ def reindex(index):
 
 
 if __name__ == '__main__':
-	migrate()
+	if args.migrate:
+		migrate()
+	elif args.verify:
+		verify()
+	else:
+		print("No valid option selected!")
