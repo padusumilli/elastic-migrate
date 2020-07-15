@@ -241,8 +241,8 @@ def migrate():
 		for index_stat in new_cat_indices:
 			new_index_counts[index_stat['index']] = index_stat['docs.count']
 
-		total_index_type_count = 0
-		total_old_index_type_count = 0
+		total_indexed_count = 0
+		total_old_index_count = 0
 		for index in sorted(es_old.indices.get(index_pattern)):
 
 			# Exclude current index from migration
@@ -271,22 +271,22 @@ def migrate():
 					print(task_status['error']['caused_by'])
 				else:
 					response = task_status['response']
-					total_old_index_type_count += count
-					total_index_type_count += response['total']
+					total_old_index_count += count
+					total_indexed_count += response['total']
 					print(cur_time() + " - Migrated " + index + " with " + str(
 						response['total']) + " documents in " + str(
 						response['took']) + "ms")
 
-			if total_old_index_type_count == total_index_type_count:
-				print("Index pattern " + index_pattern + " successfully migrated. " + str(
-					total_index_type_count) + " documents migrated.")
+			if total_old_index_count == total_indexed_count:
+				print("Index " + index + " successfully migrated. " + str(
+					total_indexed_count) + " documents migrated.")
 			else:
-				print("Count mismatched migrating index pattern " + index_pattern + ". " + str(
-					total_index_type_count) + " docs migrated while " + str(
-					total_old_index_type_count) + " found in old cluster.")
+				print("Count mismatched migrating index " + index + ". " + str(
+					total_indexed_count) + " docs migrated while " + str(
+					total_old_index_count) + " found in old cluster.")
 
-		print("Indexed " + str(total_index_type_count) + " docs for " + index_pattern)
-		total_doc_count += total_index_type_count
+		print("Indexed " + str(total_indexed_count) + " docs for " + index_pattern)
+		total_doc_count += total_indexed_count
 
 	print("Indexed " + str(total_doc_count) + " docs")
 
