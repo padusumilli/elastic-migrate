@@ -309,7 +309,7 @@ def retry(fun, task, max_tries=10):
 def get_task_status(output):
 	task_status = es_new.tasks.get(output['task'], timeout='1m')
 	while not task_status['completed']:
-		time.sleep(5)
+		time.sleep(30)
 		task_status = es_new.tasks.get(output['task'], timeout='1m')
 	return task_status
 
