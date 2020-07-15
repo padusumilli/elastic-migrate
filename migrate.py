@@ -69,11 +69,11 @@ exclude_current_index = True
 # indices = ['quarantine-2019*']
 
 indices = {
-	"threats-2019*": "monthly",
-	# "quarantine-2019*": "weekly",
-	# "summary-2019*": "monthly",
-	# "scans-2019*": "monthly",
-	# "incident-2019*": "monthly",
+	"threats-2018*": "monthly",
+	"quarantine-2018*": "weekly",
+	"summary-2018*": "monthly",
+	"scans-2018*": "monthly",
+	# "incident-2018*": "monthly",
 	# "agent": "single",
 	# "site_v1": "single",
 	# "idsrules-vipre*": "single",
@@ -113,73 +113,87 @@ def add_index_templates():
 def verify():
 	print("Verifying migrated data from " + es_old_host + " to " + es_new_host + "\n")
 	for index_pattern in indices.keys():
-		print(cur_time() + " - Verifying " + index_pattern)
 		index_duration = indices[index_pattern]
-		old_cat_indices = []
-		if es_old.indices.exists(index=index_pattern):
-			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
+		verify_index(index_pattern, index_duration)
 
-		new_cat_indices = []
-		if index_duration == "weekly":
-			if es_new.indices.exists(index=index_pattern):
-				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
 
-			old_index_counts = {}
-			for index_stat in old_cat_indices:
-				index = trim_index(index_stat['index'])
-				old_index_counts[index] = index_stat['docs.count']
+def verify_index(index_pattern, index_duration):
+	valid = True
+	print(cur_time() + " - Verifying " + index_pattern)
+	old_cat_indices = []
+	if es_old.indices.exists(index=index_pattern):
+		old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
+	new_cat_indices = []
+	if index_duration == "weekly":
+		if es_new.indices.exists(index=index_pattern):
+			new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
 
-			new_index_counts = {}
-			for index_stat in new_cat_indices:
-				new_index_counts[index_stat['index']] = index_stat['docs.count']
+		old_index_counts = {}
+		for index_stat in old_cat_indices:
+			index = trim_index(index_stat['index'])
+			old_index_counts[index] = index_stat['docs.count']
 
-			for index in sorted(es_old.indices.get(index_pattern)):
-				index = trim_index(index)
-				count = int(old_index_counts[index]) if index in old_index_counts else 0
+		new_index_counts = {}
+		for index_stat in new_cat_indices:
+			new_index_counts[index_stat['index']] = index_stat['docs.count']
 
-				# if index count match, skip to the next index
-				reindexed_count = int(new_index_counts[index]) if index in new_index_counts else 0
-				if count is not None and reindexed_count is not None and reindexed_count == count:
-					print(index + " counts match in new cluster. Found " + str(count) + " docs")
-				else:
-					print(index + " counts DOES NOT match in new cluster. Found " + str(
-						count) + " docs in old cluster and " + str(reindexed_count) + " in new cluster")
-		elif index_duration == "monthly":
-			years = set(map(lambda x: index_year(x), sorted(es_old.indices.get(index_pattern))))
-			"""
-			iterate through the each month of the year and validate data by month
-			"""
-			for year in sorted(years):
-				print("Verifying " + index_pattern + " for year " + str(year))
-				res_old = es_old.count(index=index_pattern)
-				res_new = es_new.count(index=index_pattern)
-				if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-					print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
-				else:
-					print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
-						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+		for index in sorted(es_old.indices.get(index_pattern)):
+			index = trim_index(index)
+			count = int(old_index_counts[index]) if index in old_index_counts else 0
 
-				for i in range(1, 13):
-					date = datetime.datetime(year, i, 1)
-					month_range = get_month_day_range(date)
-					q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
-					res_old = es_old.count(index=index_pattern, body=q)
-
-					month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
-					res_new = es_new.count(index=month_index)
-					if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-						print(month_index + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
-					else:
-						print(month_index + " counts DOES NOT match in new cluster. Found " + str(
-							res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
-		elif index_duration == "single":
-			res_old = es_old.count(index=index_pattern)
-			res_new = es_new.count(index=index_pattern)
-			if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-				print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+			reindexed_count = int(new_index_counts[index]) if index in new_index_counts else 0
+			if count is not None and reindexed_count is not None and reindexed_count == count:
+				print(index + " counts match in new cluster. Found " + str(count) + " docs")
 			else:
-				print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
-					res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+				print(index + " counts DOES NOT match in new cluster. Found " + str(
+					count) + " docs in old cluster and " + str(reindexed_count) + " in new cluster")
+				valid = False
+	elif index_duration == "monthly":
+		years = set(map(lambda x: index_year(x), sorted(es_old.indices.get(index_pattern))))
+		"""
+		iterate through the each month of the year and validate data by month
+		"""
+		for year in sorted(years):
+			print("Verifying " + index_pattern + " for year " + str(year))
+			ret = verify_single_index(index_pattern)
+			if valid:
+				valid = ret
+
+			for i in range(1, 13):
+				date = datetime.datetime(year, i, 1)
+				month_range = get_month_day_range(date)
+				q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
+				res_old = es_old.count(index=index_pattern, body=q)
+
+				month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
+				res_new = es_new.count(index=month_index) if es_new.indices.exists(month_index) else None
+				if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+					print(month_index + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+				elif res_old is not None and res_new is not None:
+					print(month_index + " counts DOES NOT match in new cluster. Found " + str(
+						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+					valid = False
+				else:
+					valid = False
+	elif index_duration == "single":
+		ret = verify_single_index(index_pattern)
+		if valid:
+			valid = ret
+	return valid
+
+
+def verify_single_index(index_pattern):
+	res_old = es_old.count(index=index_pattern)
+	res_new = es_new.count(index=index_pattern) if es_new.indices.exists(index_pattern) else None
+	if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+		print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+		return True
+	elif res_old is not None and res_new is not None:
+		print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
+			res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+		return False
+	else:
+		return False
 
 
 def index_year(index):
@@ -220,16 +234,25 @@ def migrate():
 		if es_old.indices.exists(index=index_pattern):
 			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
 
+		# validate counts if index exists in target, delete index in target when counts does not match
 		new_cat_indices = []
 		index_duration = indices[index_pattern]
 		if index_duration == "weekly":
 			if es_new.indices.exists(index=index_pattern):
 				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
 		elif index_duration == "monthly":
-			res_old = es_old.count(index=index_pattern)
-			res_new = es_new.count(index=index_pattern)
-			if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-				print("Doc count for monthly indices for pattern " + index_pattern + " matched. Skipping to next index")
+			valid = verify_index(index_pattern, index_duration)
+			if not valid:
+				print("Deleting count mismatched monthly index " + index_pattern)
+				es_new.indices.delete(index_pattern)
+			else:
+				continue
+		elif index_duration == "single":
+			valid = verify_single_index(index_pattern)
+			if not valid:
+				print("Deleting count mismatched single index " + index_pattern)
+				es_new.indices.delete(index_pattern)
+			else:
 				continue
 
 		old_index_counts = {}
