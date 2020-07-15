@@ -147,11 +147,10 @@ def verify():
 		elif index_duration == "monthly":
 			years = set(map(lambda x: index_year(x), sorted(es_old.indices.get(index_pattern))))
 			"""
-			iterate through the each month of the
+			iterate through the each month of the year and validate data by month
 			"""
 			for year in sorted(years):
 				print("Verifying " + index_pattern + " for year " + str(year))
-				year_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "*"
 				res_old = es_old.count(index=index_pattern)
 				res_new = es_new.count(index=index_pattern)
 				if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
@@ -160,19 +159,19 @@ def verify():
 					print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
 						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
 
-				# for i in range(1, 12):
-				# 	date = datetime.datetime(year, i, 1)
-				# 	month_range = get_month_day_range(date)
-				# 	q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
-				# 	res_old = es_old.count(index=index_pattern, body=q)
-				#
-				# 	month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
-				# 	res_new = es_new.count(index=month_index)
-				# 	if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
-				# 		print(index_pattern + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
-				# 	else:
-				# 		print(index_pattern + " counts DOES NOT match in new cluster. Found " + str(
-				# 			res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+				for i in range(1, 13):
+					date = datetime.datetime(year, i, 1)
+					month_range = get_month_day_range(date)
+					q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
+					res_old = es_old.count(index=index_pattern, body=q)
+
+					month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
+					res_new = es_new.count(index=month_index)
+					if res_old is not None and res_new is not None and res_old["count"] == res_new["count"]:
+						print(month_index + " counts match in new cluster. Found " + str(res_old["count"]) + " docs")
+					else:
+						print(month_index + " counts DOES NOT match in new cluster. Found " + str(
+							res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
 		elif index_duration == "single":
 			res_old = es_old.count(index=index_pattern)
 			res_new = es_new.count(index=index_pattern)
@@ -205,9 +204,10 @@ def get_month_day_range(dt):
 	>>> get_month_day_range(date)
 	(datetime.date(2011, 2, 1), datetime.date(2011, 2, 28))
 	"""
-	first_day = dt.replace(day=1)
-	last_day = dt.replace(hour=23, minute=59, second=59, day=calendar.monthrange(dt.year, dt.month)[1])
-	return int(first_day.strftime('%s000')), int(last_day.strftime('%s999'))
+	first_day = dt.replace(tzinfo=datetime.timezone.utc, day=1)
+	last_day = dt.replace(tzinfo=datetime.timezone.utc, hour=23, minute=59, second=59,
+						  day=calendar.monthrange(dt.year, dt.month)[1])
+	return int(first_day.timestamp()) * 1000, int(last_day.timestamp() * 1000)
 
 
 def migrate():
