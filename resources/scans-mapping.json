@@ -56,7 +56,7 @@
 	  {
 		"string_fields": {
 		  "mapping": {
-			"omit_norms": true,
+			"norms": false,
 			"type": "keyword"
 		  },
 		  "match_mapping_type": "string",

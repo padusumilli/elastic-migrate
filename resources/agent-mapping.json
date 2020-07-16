@@ -1,145 +1,145 @@
 {
   "index_patterns": "agent*",
   "settings": {
-    "index": {
-      "refresh_interval": "15s",
-      "number_of_shards": 8,
-      "routing_partition_size": 3,
-      "number_of_replicas": 1,
-      "analysis": {
-        "analyzer": {
-          "lower_case_analyzer": {
-            "tokenizer": "keyword",
-            "filter": [
-              "lowercase"
-            ]
-          },
-          "comma_analyzer": {
-            "tokenizer": "comma_tokenizer",
-            "filter": [
-              "lowercase"
-            ]
-          }
-        },
-        "tokenizer": {
-          "comma_tokenizer": {
-            "type": "pattern",
-            "pattern": ","
-          }
-        },
-        "normalizer": {
-          "lower_case_normalizer": {
-            "type": "custom",
-            "filter": [
-              "lowercase",
-              "asciifolding"
-            ]
-          }
-        }
-      }
-    }
+	"index": {
+	  "refresh_interval": "15s",
+	  "number_of_shards": 8,
+	  "routing_partition_size": 3,
+	  "number_of_replicas": 1,
+	  "analysis": {
+		"analyzer": {
+		  "lower_case_analyzer": {
+			"tokenizer": "keyword",
+			"filter": [
+			  "lowercase"
+			]
+		  },
+		  "comma_analyzer": {
+			"tokenizer": "comma_tokenizer",
+			"filter": [
+			  "lowercase"
+			]
+		  }
+		},
+		"tokenizer": {
+		  "comma_tokenizer": {
+			"type": "pattern",
+			"pattern": ","
+		  }
+		},
+		"normalizer": {
+		  "lower_case_normalizer": {
+			"type": "custom",
+			"filter": [
+			  "lowercase",
+			  "asciifolding"
+			]
+		  }
+		}
+	  }
+	}
   },
   "mappings": {
-    "_routing": {
-      "required": true
-    },
-    "properties": {
-      "lastContactTimestamp": {
-        "type": "date",
-        "format": "epoch_millis"
-      },
-      "lastContentUpdateTimestamp": {
-        "type": "date",
-        "format": "epoch_millis"
-      },
-      "lastScanTimestamp": {
-        "type": "date",
-        "format": "epoch_millis"
-      },
-      "lastThreatTimestamp": {
-        "type": "date",
-        "format": "epoch_millis"
-      },
-      "registeredTimestamp": {
-        "type": "date",
-        "format": "epoch_millis"
-      },
-      "agentUuid": {
-        "type": "keyword"
-      },
-      "siteUuid": {
-        "type": "keyword"
-      },
-      "tenantUuid": {
-        "type": "keyword"
-      },
-      "policyUuid": {
-        "type": "keyword"
-      },
-      "uuid": {
-        "type": "keyword"
-      },
-      "softwareVersionNumber": {
-        "type": "long"
-      },
-      "osPlatform": {
-        "type": "keyword"
-      },
-      "osFullName": {
-        "type": "keyword"
-      },
-      "macAddress": {
-        "type": "keyword",
-        "fields": {
-          "search": {
-            "type": "text",
-            "analyzer": "comma_analyzer"
-          }
-        }
-      },
-      "loggedInUser": {
-        "type": "keyword",
-        "normalizer": "lower_case_normalizer",
-        "fields": {
-          "search": {
-            "type": "text",
-            "analyzer": "lower_case_analyzer"
-          }
-        }
-      },
-      "name": {
-        "type": "keyword",
-        "normalizer": "lower_case_normalizer",
-        "fields": {
-          "search": {
-            "type": "text",
-            "analyzer": "lower_case_analyzer"
-          }
-        }
-      },
-      "alias": {
-        "type": "keyword",
-        "normalizer": "lower_case_normalizer",
-        "fields": {
-          "search": {
-            "type": "text",
-            "analyzer": "lower_case_analyzer"
-          }
-        }
-      }
-    },
-    "dynamic_templates": [
-      {
-        "string_fields": {
-          "mapping": {
-            "omit_norms": true,
-            "type": "keyword"
-          },
-          "match_mapping_type": "string",
-          "match": "*"
-        }
-      }
-    ]
+	"_routing": {
+	  "required": true
+	},
+	"properties": {
+	  "lastContactTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "lastContentUpdateTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "lastScanTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "lastThreatTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "registeredTimestamp": {
+		"type": "date",
+		"format": "epoch_millis"
+	  },
+	  "agentUuid": {
+		"type": "keyword"
+	  },
+	  "siteUuid": {
+		"type": "keyword"
+	  },
+	  "tenantUuid": {
+		"type": "keyword"
+	  },
+	  "policyUuid": {
+		"type": "keyword"
+	  },
+	  "uuid": {
+		"type": "keyword"
+	  },
+	  "softwareVersionNumber": {
+		"type": "long"
+	  },
+	  "osPlatform": {
+		"type": "keyword"
+	  },
+	  "osFullName": {
+		"type": "keyword"
+	  },
+	  "macAddress": {
+		"type": "keyword",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "comma_analyzer"
+		  }
+		}
+	  },
+	  "loggedInUser": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  },
+	  "name": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  },
+	  "alias": {
+		"type": "keyword",
+		"normalizer": "lower_case_normalizer",
+		"fields": {
+		  "search": {
+			"type": "text",
+			"analyzer": "lower_case_analyzer"
+		  }
+		}
+	  }
+	},
+	"dynamic_templates": [
+	  {
+		"string_fields": {
+		  "mapping": {
+			"norms": false,
+			"type": "keyword"
+		  },
+		  "match_mapping_type": "string",
+		  "match": "*"
+		}
+	  }
+	]
   },
   "aliases": {
   }
