@@ -64,10 +64,6 @@ es_new = Elasticsearch(es_new_url, verify_certs=False, timeout=60)
 exclude_current_index = True
 
 # list of indices pattern that are to be migrated to new cluster
-# indices = ['agent', 'site_v1', 'idsrules-vipre*', 'exclusions*']  # , 'audit-2017*']
-# indices = ['threat-2017*', 'summary-2017*', 'scans-2017*', 'quarantine-2017*', 'incident-2017*']
-# indices = ['quarantine-2019*']
-
 indices = {
 	"threats-2018*": "monthly",
 	"quarantine-2018*": "weekly",
@@ -119,12 +115,13 @@ def verify():
 
 def verify_index(index_pattern, index_duration):
 	valid = True
-	print(cur_time() + " - Verifying " + index_pattern)
-	old_cat_indices = []
-	if es_old.indices.exists(index=index_pattern):
-		old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
+	print("\n" + cur_time() + " - Verifying " + index_pattern)
 	new_cat_indices = []
 	if index_duration == "weekly":
+		old_cat_indices = []
+		if es_old.indices.exists(index=index_pattern):
+			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
+
 		if es_new.indices.exists(index=index_pattern):
 			new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
 
@@ -162,7 +159,8 @@ def verify_index(index_pattern, index_duration):
 			for i in range(1, 13):
 				date = datetime.datetime(year, i, 1)
 				month_range = get_month_day_range(date)
-				q = {"query": {"range": {"timestamp": {"gte": month_range[0], "lte": month_range[1]}}}}
+				time_field = "startTime" if "scans" in index_pattern else "timestamp"
+				q = {"query": {"range": {time_field: {"gte": month_range[0], "lte": month_range[1]}}}}
 				res_old = es_old.count(index=index_pattern, body=q)
 
 				month_index = index_pattern[0:index_pattern.index("-")] + "-" + str(year) + "-" + "{:02d}".format(i)
@@ -219,7 +217,7 @@ def get_month_day_range(dt):
 	(datetime.date(2011, 2, 1), datetime.date(2011, 2, 28))
 	"""
 	first_day = dt.replace(tzinfo=datetime.timezone.utc, day=1)
-	last_day = dt.replace(tzinfo=datetime.timezone.utc, hour=23, minute=59, second=59,
+	last_day = dt.replace(tzinfo=datetime.timezone.utc, hour=23, minute=59, second=59, microsecond=999999,
 						  day=calendar.monthrange(dt.year, dt.month)[1])
 	return int(first_day.timestamp()) * 1000, int(last_day.timestamp() * 1000)
 
