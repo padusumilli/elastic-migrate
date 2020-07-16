@@ -70,10 +70,10 @@ indices = {
 	"summary-2018*": "monthly",
 	"scans-2018*": "monthly",
 	# "incident-2018*": "monthly",
-	# "agent": "single",
-	# "site_v1": "single",
-	# "idsrules-vipre*": "single",
-	# "exclusions*": "single"
+	"agent": "single",
+	"site_v1": "single",
+	"idsrules-vipre*": "single",
+	"exclusions*": "single"
 }
 
 # indices that require aliases
@@ -242,14 +242,22 @@ def migrate():
 			valid = verify_index(index_pattern, index_duration)
 			if not valid:
 				print("Deleting count mismatched monthly index " + index_pattern)
-				es_new.indices.delete(index_pattern)
+				user_res = query_yes_no("Do you want to delete " + index_pattern + " and retry?")
+				if user_res:
+					es_new.indices.delete(index_pattern)
+				else:
+					continue
 			else:
 				continue
 		elif index_duration == "single":
 			valid = verify_single_index(index_pattern)
 			if not valid:
 				print("Deleting count mismatched single index " + index_pattern)
-				es_new.indices.delete(index_pattern)
+				user_res = query_yes_no("Do you want to delete " + index_pattern + " and retry?")
+				if user_res:
+					es_new.indices.delete(index_pattern)
+				else:
+					continue
 			else:
 				continue
 
@@ -316,8 +324,39 @@ def migrate():
 	update_settings()
 
 
+def query_yes_no(question, default="yes"):
+	"""Ask a yes/no question via raw_input() and return their answer.
+
+	"question" is a string that is presented to the user.
+	"default" is the presumed answer if the user just hits <Enter>.
+		It must be "yes" (the default), "no" or None (meaning
+		an answer is required of the user).
+
+	The "answer" return value is True for "yes" or False for "no".
+	"""
+	valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
+	if default is None:
+		prompt = " [y/n] "
+	elif default == "yes":
+		prompt = " [Y/n] "
+	elif default == "no":
+		prompt = " [y/N] "
+	else:
+		raise ValueError("invalid default answer: '%s'" % default)
+
+	while True:
+		print(question + prompt)
+		choice = input().lower()
+		if default is not None and choice == '':
+			return valid[default]
+		elif choice in valid:
+			return valid[choice]
+		else:
+			print("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
+
+
 # Add retry to elastic calls to account for temporary connectivity issues
-def retry(fun, task, max_tries=10):
+def retry(fun, task, max_tries=30):
 	for i in range(max_tries):
 		try:
 			return fun(task)
@@ -330,7 +369,7 @@ def retry(fun, task, max_tries=10):
 def get_task_status(output):
 	task_status = es_new.tasks.get(output['task'], timeout='1m')
 	while not task_status['completed']:
-		time.sleep(30)
+		time.sleep(60)
 		task_status = es_new.tasks.get(output['task'], timeout='1m')
 	return task_status
 
