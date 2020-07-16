@@ -69,7 +69,7 @@ indices = {
 	"quarantine-2018*": "weekly",
 	"summary-2018*": "monthly",
 	"scans-2018*": "monthly",
-	# "incident-2018*": "monthly",
+	"incident-2018*": "monthly",
 	"agent": "single",
 	"site_v1": "single",
 	"idsrules-vipre*": "single",
@@ -241,9 +241,9 @@ def migrate():
 		elif index_duration == "monthly":
 			valid = verify_index(index_pattern, index_duration)
 			if not valid:
-				print("Deleting count mismatched monthly index " + index_pattern)
-				user_res = query_yes_no("Do you want to delete " + index_pattern + " and retry?")
+				user_res = query_yes_no("Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
 				if user_res:
+					print("Deleting count mismatched monthly index " + index_pattern)
 					es_new.indices.delete(index_pattern)
 				else:
 					continue
@@ -252,9 +252,9 @@ def migrate():
 		elif index_duration == "single":
 			valid = verify_single_index(index_pattern)
 			if not valid:
-				print("Deleting count mismatched single index " + index_pattern)
-				user_res = query_yes_no("Do you want to delete " + index_pattern + " and retry?")
+				user_res = query_yes_no("Do you want to delete count mismatched single index " + index_pattern + " and retry?")
 				if user_res:
+					print("Deleting count mismatched single index " + index_pattern)
 					es_new.indices.delete(index_pattern)
 				else:
 					continue
