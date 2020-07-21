@@ -171,7 +171,7 @@ def verify_index(index_pattern, index_duration):
 					print(month_index + " counts DOES NOT match in new cluster. Found " + str(
 						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
 					valid = False
-				else:
+				elif res_old is not None and res_old["count"] > 0:
 					valid = False
 	elif index_duration == "single":
 		ret = verify_single_index(index_pattern)
@@ -252,7 +252,8 @@ def migrate():
 		elif index_duration == "single":
 			valid = verify_single_index(index_pattern)
 			if not valid:
-				user_res = query_yes_no("Do you want to delete count mismatched single index " + index_pattern + " and retry?")
+				user_res = query_yes_no(
+					"Do you want to delete count mismatched single index " + index_pattern + " and retry?")
 				if user_res:
 					print("Deleting count mismatched single index " + index_pattern)
 					es_new.indices.delete(index_pattern)
