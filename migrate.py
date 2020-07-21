@@ -322,6 +322,9 @@ def migrate():
 
 	# add index aliases
 	add_aliases()
+	# merge segments to speed up search speed
+	merge_segments()
+	# update replication and index refresh settings
 	update_settings()
 
 
@@ -402,6 +405,17 @@ def cur_time():
 	now = datetime.datetime.now()
 	current_time = now.strftime("%H:%M:%S")
 	return current_time
+
+
+# Update index settings (replicas and refresh interval)
+def merge_segments():
+	for index_pattern in indices:
+		new_index = trim_index(index_pattern)
+		print("\nMerging segments for " + index_pattern)
+		for index in sorted(es_new.indices.get(new_index)):
+			print("Merging segments for " + index)
+			# set refresh interval and replica count on the new index
+			es_new.indices.forcemerge(index=index, params={"max_num_segments": 1})
 
 
 # Update index settings (replicas and refresh interval)
