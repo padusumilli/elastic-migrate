@@ -247,7 +247,9 @@ def migrate():
 					print("Deleting count mismatched monthly index " + index_pattern)
 					es_new.indices.delete(index_pattern)
 				else:
-					continue
+					user_res = query_yes_no("Do you want to reindex mismatched monthly index " + index_pattern + "?")
+					if not user_res:
+						continue
 			else:
 				continue
 		elif index_duration == "single":
