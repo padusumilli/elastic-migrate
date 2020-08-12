@@ -241,7 +241,8 @@ def migrate():
 		elif index_duration == "monthly":
 			valid = verify_index(index_pattern, index_duration)
 			if not valid:
-				user_res = query_yes_no("Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
+				user_res = query_yes_no(
+					"Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
 				if user_res:
 					print("Deleting count mismatched monthly index " + index_pattern)
 					es_new.indices.delete(index_pattern)
@@ -298,14 +299,16 @@ def migrate():
 				task_status = retry(get_task_status, output)
 
 				if 'error' in task_status:
-					print(task_status['error']['caused_by'])
+					if 'caused_by' in task_status['error']:
+						print(task_status['error']['caused_by'])
+					else:
+						print(task_status['error'])
 				else:
 					response = task_status['response']
 					total_old_index_count += count
 					total_indexed_count += response['total']
 					print(cur_time() + " - Migrated " + index + " with " + str(
-						response['total']) + " documents in " + str(
-						response['took']) + "ms")
+						response['total']) + " documents in " + str(response['took']) + "ms")
 
 			if total_old_index_count == total_indexed_count:
 				print("Index " + index + " successfully migrated. " + str(
@@ -428,7 +431,7 @@ def update_settings():
 			es_new.indices.put_settings(index=index,
 										body={
 											"number_of_replicas": 1,
-											"refresh_interval": "5s"
+											"refresh_interval": "30s"
 										})
 
 
