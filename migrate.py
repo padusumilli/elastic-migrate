@@ -32,6 +32,9 @@ parser.add_argument('-tpwd', '--target-pwd', type=str, metavar='pwd', required=T
 parser.add_argument('-ts', '--target-scheme', type=str, metavar='', required=False, default='https',
 					help='Scheme for elastic 7')
 
+parser.add_argument('-ex', '--exclude-current-index', type=str, metavar='', required=False, default=False,
+					help='Exclude current index')
+
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-m", "--migrate", action='store_true', help='Run migration')
 group.add_argument("-v", "--verify", action='store_true', help='Verify migration')
@@ -61,27 +64,23 @@ es_new_url = es_new_scheme + '://' + es_new_user + ':' + es_new_pwd + '@' + es_n
 es_new = Elasticsearch(es_new_url, verify_certs=False, timeout=60)
 
 # flag to exclude current index
-exclude_current_index = True
+exclude_current_index = args.exclude_current_index
 
 # list of indices pattern that are to be migrated to new cluster
 indices = {
-	"threats-2018*": "monthly",
-	"quarantine-2018*": "weekly",
-	"summary-2018*": "monthly",
-	"scans-2018*": "monthly",
-	"incident-2018*": "monthly",
-	"agent": "single",
-	"site_v1": "single",
-	"idsrules-vipre*": "single",
-	"exclusions*": "single"
+	# "threats-*": "monthly",
+	# "quarantine-*": "weekly",
+	# "summary-*": "monthly",
+	# "scans-2019*": "monthly",
+	# "incident-*": "monthly",
+	# "agent": "single",
+	# "site_v1": "single",
+	# "idsrules-vipre*": "single",
+	# "exclusions*": "single"
 }
 
 # indices that require aliases
-aliases = {
-	"site_v1": "site",
-	"exclusions-vipre-2020.06.12-32851": "exclusions-vipre",
-	"idsrules-vipre-2020.06.15-61651": "idsrules-vipre"
-}
+aliases = ["site", "exclusions-vipre", "idsrules-vipre", "idsrules-vipre-suricata"]
 
 templates = {
 	'agent-mapping': 'agent-mapping.json',
@@ -170,6 +169,7 @@ def verify_index(index_pattern, index_duration):
 				elif res_old is not None and res_new is not None:
 					print(month_index + " counts DOES NOT match in new cluster. Found " + str(
 						res_old["count"]) + " docs in old cluster and " + str(res_new["count"]) + " in new cluster")
+					# find_duplicates(index_pattern, month_range)
 					valid = False
 				elif res_old is not None and res_old["count"] > 0:
 					valid = False
@@ -245,7 +245,8 @@ def migrate():
 					"Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
 				if user_res:
 					print("Deleting count mismatched monthly index " + index_pattern)
-					es_new.indices.delete(index_pattern)
+					if es_new.indices.exists(index=index_pattern):
+						es_new.indices.delete(index_pattern)
 				else:
 					user_res = query_yes_no("Do you want to reindex mismatched monthly index " + index_pattern + "?")
 					if not user_res:
@@ -259,7 +260,8 @@ def migrate():
 					"Do you want to delete count mismatched single index " + index_pattern + " and retry?")
 				if user_res:
 					print("Deleting count mismatched single index " + index_pattern)
-					es_new.indices.delete(index_pattern)
+					if es_new.indices.exists(index=index_pattern):
+						es_new.indices.delete(index_pattern)
 				else:
 					continue
 			else:
@@ -326,7 +328,8 @@ def migrate():
 	print("Indexed " + str(total_doc_count) + " docs")
 
 	# add index aliases
-	add_aliases()
+	if not exclude_current_index:
+		add_aliases()
 	# merge segments to speed up search speed
 	merge_segments()
 	# update replication and index refresh settings
@@ -441,8 +444,12 @@ def update_settings():
 def add_aliases():
 	print("\nAdding index aliases")
 	for alias in aliases:
-		print("Adding alias " + aliases[alias] + " to index " + alias)
-		es_new.indices.put_alias(alias, aliases[alias])
+		if es_old.indices.exists_alias(name=alias):
+			alias_index = list(es_old.indices.get(alias).keys())[0]
+			print("Adding alias " + alias + " to index " + alias_index)
+			es_new.indices.put_alias(alias_index, alias)
+		else:
+			print("No alias found for " + alias)
 
 
 # method to reindex from old es cluster to new
@@ -498,8 +505,7 @@ def reindex(index):
 						  "ctx._index = ctx._index.substring(loc+3);"
 						  "}"
 						  "ctx._index = ctx._index.substring(0, ctx._index.indexOf('-')) + '-' + dateTime.format(dtf);"
-			}},
-			wait_for_completion=False, request_timeout=30, refresh=True)
+			}}, wait_for_completion=False, request_timeout=30, refresh=True)
 	elif 'scans' in index:
 		return es_new.reindex({"source": {
 			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
@@ -512,8 +518,7 @@ def reindex(index):
 						  "ctx._index = ctx._index.substring(loc+3);"
 						  "}"
 						  "ctx._index = ctx._index.substring(0, ctx._index.indexOf('-')) + '-' + dateTime.format(dtf);"
-			}},
-			wait_for_completion=False, request_timeout=30, refresh=True)
+			}}, wait_for_completion=False, request_timeout=30, refresh=True)
 	else:
 		return es_new.reindex({"source": {
 			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
