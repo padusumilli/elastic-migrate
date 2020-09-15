@@ -602,7 +602,7 @@ def find_duplicates(index, time_range):
 
 if __name__ == '__main__':
 	if args.migrate:
-		update_settings()
+		migrate()
 	elif args.verify:
 		verify()
 	elif args.dry_run:
