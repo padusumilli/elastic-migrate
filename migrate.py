@@ -7,6 +7,7 @@ import time
 import datetime
 
 import urllib3
+import redis
 from elasticsearch import Elasticsearch
 from elasticsearch5 import Elasticsearch as Elasticsearch5
 
@@ -38,6 +39,7 @@ parser.add_argument('-ex', '--exclude-current-index', type=str, metavar='', requ
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-m", "--migrate", action='store_true', help='Run migration')
 group.add_argument("-v", "--verify", action='store_true', help='Verify migration')
+group.add_argument("-d", "--dry-run", action='store_true', help='Dry run migration')
 
 args = parser.parse_args()
 
@@ -65,18 +67,19 @@ es_new = Elasticsearch(es_new_url, verify_certs=False, timeout=60)
 
 # flag to exclude current index
 exclude_current_index = args.exclude_current_index
+dry_run = False
 
 # list of indices pattern that are to be migrated to new cluster
 indices = {
-	# "threats-*": "monthly",
-	# "quarantine-*": "weekly",
-	# "summary-*": "monthly",
-	# "scans-2019*": "monthly",
-	# "incident-*": "monthly",
-	# "agent": "single",
-	# "site_v1": "single",
-	# "idsrules-vipre*": "single",
-	# "exclusions*": "single"
+	"threats-*": "monthly",
+	"quarantine-*": "weekly",
+	"summary-*": "monthly",
+	"scans-*": "monthly",
+	"incident-*": "monthly",
+	"agent": "single",
+	"site_v1": "single",
+	"idsrules-vipre*": "single",
+	"exclusions*": "single"
 }
 
 # indices that require aliases
@@ -282,7 +285,7 @@ def migrate():
 
 			# Exclude current index from migration
 			if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index == target_index(
-					index, index_duration)) or (index_duration.lower() == "single")):
+					index, index_duration)) or (index_duration.lower() == "single") or ('quarantine' in index.lower())):
 				print("Skipping current index " + index)
 				continue
 
@@ -299,28 +302,31 @@ def migrate():
 					es_new.indices.delete(index)
 
 				# migrate index to new cluster
-				output = reindex(index)
-				task_status = retry(get_task_status, output)
+				print(cur_time() + " - Migrating index " + index)
+				if not dry_run:
+					output = reindex(index)
+					task_status = retry(get_task_status, output)
 
-				if 'error' in task_status:
-					if 'caused_by' in task_status['error']:
-						print(task_status['error']['caused_by'])
+					if 'error' in task_status:
+						if 'caused_by' in task_status['error']:
+							print(task_status['error']['caused_by'])
+						else:
+							print(task_status['error'])
 					else:
-						print(task_status['error'])
-				else:
-					response = task_status['response']
-					total_old_index_count += count
-					total_indexed_count += response['total']
-					print(cur_time() + " - Migrated " + index + " with " + str(
-						response['total']) + " documents in " + str(response['took']) + "ms")
+						response = task_status['response']
+						total_old_index_count += count
+						total_indexed_count += response['total']
+						print(cur_time() + " - Migrated " + index + " with " + str(
+							response['total']) + " documents in " + str(response['took']) + "ms")
 
-			if total_old_index_count == total_indexed_count:
-				print("Index " + index + " successfully migrated. " + str(
-					total_indexed_count) + " documents migrated.")
-			else:
-				print("Count mismatched migrating index " + index + ". " + str(
-					total_indexed_count) + " docs migrated while " + str(
-					total_old_index_count) + " found in old cluster.")
+			if not dry_run:
+				if total_old_index_count == total_indexed_count:
+					print("Index " + index + " successfully migrated. " + str(
+						total_indexed_count) + " documents migrated.")
+				else:
+					print("Count mismatched migrating index " + index + ". " + str(
+						total_indexed_count) + " docs migrated while " + str(
+						total_old_index_count) + " found in old cluster.")
 
 		print("Indexed " + str(total_indexed_count) + " docs for " + index_pattern)
 		total_doc_count += total_indexed_count
@@ -418,6 +424,11 @@ def cur_time():
 # Update index settings (replicas and refresh interval)
 def merge_segments():
 	for index_pattern in indices:
+		index_duration = indices[index_pattern]
+		if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index_pattern == target_index(
+				index_pattern, index_duration)) or (index_duration.lower() == "single") or ('quarantine' in index_pattern.lower())):
+			print("Skipping current index " + index_pattern)
+			continue
 		new_index = trim_index(index_pattern)
 		print("\nMerging segments for " + index_pattern)
 		for index in sorted(es_new.indices.get(new_index)):
@@ -429,6 +440,11 @@ def merge_segments():
 # Update index settings (replicas and refresh interval)
 def update_settings():
 	for index_pattern in indices:
+		index_duration = indices[index_pattern]
+		if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index_pattern == target_index(
+				index_pattern, index_duration)) or (index_duration.lower() == "single") or ('quarantine' in index_pattern.lower())):
+			print("Skipping current index " + index_pattern)
+			continue
 		new_index = trim_index(index_pattern)
 		print("\nUpdating index settings for " + new_index)
 		for index in sorted(es_new.indices.get(new_index)):
@@ -522,14 +538,75 @@ def reindex(index):
 	else:
 		return es_new.reindex({"source": {
 			"remote": {"host": es_old_url, "username": es_old_user, "password": es_old_pwd}, "index": index},
-			"dest": {"index": new_index}},
-			wait_for_completion=False, request_timeout=30, refresh=True)
+			"dest": {"index": new_index}}, wait_for_completion=False, request_timeout=30, refresh=True)
+
+
+def find_duplicates(index, time_range):
+	print("Checking duplicates in index " + index)
+	conn = redis.Redis('localhost')
+	# delete existing key if any
+	conn.delete(index)
+
+	# JSON body for the Elasticsearch query
+	time_field = "startTime" if "scans" in index else "timestamp"
+	search_body = {"_source": "false", "query": {"range": {time_field: {"gte": time_range[0], "lte": time_range[1]}}}}
+
+	# make a search() request to scroll documents
+	data = es_old.search(
+		index=index,
+		body=search_body,
+		size=5000,
+		scroll='1m',  # time value for search
+	)
+	# Get the scroll ID
+	sid = data['_scroll_id']
+	scroll_size = len(data['hits']['hits'])
+	count = 0
+	while scroll_size > 0:
+		hits = data['hits']['hits']
+		for num, doc in enumerate(hits):
+			id = doc["_id"]
+			ret = conn.sadd(index, id)
+			if ret != 1:
+				print("Duplicate id: " + id)
+
+		# ret = conn.sadd(index, *ids)
+		# print(ret)
+
+		count += scroll_size
+		print(cur_time() + " - Processed " + str(count) + " docs so far")
+		# with conn.pipeline() as pipe:
+		# 	while True:
+		# 		try:
+		# 			# Get available inventory, watching for changes
+		# 			# related to this item id before the transaction
+		# 			pipe.watch(index)
+		# 			pipe.multi()
+		# 			for num, doc in enumerate(hits):
+		# 				id = doc["_source"]["_id"]
+		# 				pipe.set(index, id)
+		# 			pipe.execute()
+		# 		except redis.WatchError:
+		# 			continue
+		# 		finally:
+		# 			pipe.reset()
+
+		data = es_old.scroll(scroll_id=sid, scroll='1m')
+
+		# Update the scroll ID
+		sid = data['_scroll_id']
+
+		# Get the number of results that returned in the last scroll
+		scroll_size = len(data['hits']['hits'])
 
 
 if __name__ == '__main__':
 	if args.migrate:
-		migrate()
+		update_settings()
 	elif args.verify:
 		verify()
+	elif args.dry_run:
+		dry_run = True
+		migrate()
 	else:
 		print("No valid option selected!")
