@@ -106,7 +106,7 @@ templates = {
 # Add index templates for the new cluster
 def add_index_templates():
 	for template in templates:
-		print("Adding template " + templates[template])
+		print("Adding template {0}".format(templates[template]))
 		data = pkgutil.get_data('resources', templates[template])
 		es_new.indices.put_template(template, data)
 
@@ -231,50 +231,16 @@ def get_month_day_range(dt):
 def migrate():
 	print("Migrating from " + es_old_host + " to " + es_new_host + "\n")
 	total_doc_count = 0
-	add_index_templates()
+	if exclude_current_index:
+		add_index_templates()
 	for index_pattern in indices.keys():
-		print("\nMigrating " + index_pattern + " " + cur_time())
+		print("\n" + cur_time() + " - Migrating " + index_pattern)
 		old_cat_indices = []
 		if es_old.indices.exists(index=index_pattern):
 			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
 
-		# validate counts if index exists in target, delete index in target when counts does not match
 		new_cat_indices = []
 		index_duration = indices[index_pattern]
-		if index_duration == "weekly":
-			if es_new.indices.exists(index=index_pattern):
-				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
-		elif index_duration == "monthly":
-			if not only_current_index:
-				valid = verify_index(index_pattern, index_duration)
-				if not valid:
-					user_res = query_yes_no(
-						"Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
-					if user_res:
-						print("Deleting count mismatched monthly index " + index_pattern)
-						if es_new.indices.exists(index=index_pattern):
-							es_new.indices.delete(index_pattern)
-					else:
-						user_res = query_yes_no("Do you want to reindex mismatched monthly index " + index_pattern + "?")
-						if not user_res:
-							continue
-				else:
-					continue
-		elif index_duration == "single":
-			if not only_current_index:
-				valid = verify_single_index(index_pattern) if not only_current_index else True
-				if not valid:
-					user_res = query_yes_no(
-						"Do you want to delete count mismatched single index " + index_pattern + " and retry?")
-					if user_res:
-						print("Deleting count mismatched single index " + index_pattern)
-						if es_new.indices.exists(index=index_pattern):
-							es_new.indices.delete(index_pattern)
-					else:
-						continue
-				else:
-					continue
-
 		old_index_counts = {}
 		for index_stat in old_cat_indices:
 			index = trim_index(index_stat['index'])
@@ -287,18 +253,19 @@ def migrate():
 		total_indexed_count = 0
 		total_old_index_count = 0
 		for index in sorted(es_old.indices.get(index_pattern)):
-
 			# Exclude current index from migration
 			if exclude_current_index and ((index_duration.lower() in ("weekly", "monthly") and index == target_index(
-					index, index_duration)) or (index_duration.lower() == "single") or ('quarantine' in index.lower())):
+					index, index_duration)) or ('quarantine' in index and index == target_index(index, "monthly")) or (
+												  index_duration.lower() == "single")):
 				print("Skipping current index " + index)
 				continue
 
+			print(target_index(index, index_duration))
 			# Migrate only current or single indices
 			if only_current_index:
 				if ((index_duration.lower() in ("weekly", "monthly") and index == target_index(
-						index, index_duration)) or (index_duration.lower() == "single") or (
-						'quarantine' in index.lower())):
+						index, index_duration)) or ('quarantine' in index and index == target_index(index, "monthly"))
+						or(index_duration.lower() == "single")):
 					total_indexed_count = migrate_single_index(index, new_index_counts, old_index_counts,
 															   total_indexed_count,
 															   total_old_index_count)
@@ -408,7 +375,7 @@ def retry(fun, task, max_tries=30):
 def get_task_status(output):
 	task_status = es_new.tasks.get(output['task'], timeout='1m')
 	while not task_status['completed']:
-		time.sleep(30)
+		time.sleep(15)
 		task_status = es_new.tasks.get(output['task'], timeout='1m')
 	return task_status
 
@@ -446,33 +413,43 @@ def cur_time():
 def merge_segments():
 	for index_pattern in indices:
 		index_duration = indices[index_pattern]
-		if exclude_current_index and (
-				(index_duration.lower() in ("weekly", "monthly") and index_pattern == target_index(
-					index_pattern, index_duration)) or (index_duration.lower() == "single") or (
-						'quarantine' in index_pattern.lower())):
-			print("Skipping current index " + index_pattern)
-			continue
 		new_index = trim_index(index_pattern)
 		print("\nMerging segments for " + index_pattern)
-		for index in sorted(es_new.indices.get(new_index)):
-			print("Merging segments for " + index)
-			# set refresh interval and replica count on the new index
-			es_new.indices.forcemerge(index=index, params={"max_num_segments": 1})
+		for index in sorted(es_new.indices.get(new_index, params={"ignore_unavailable": 'true'})):
+			if exclude_current_index and (
+					(index_duration.lower() in ("weekly", "monthly") and index == target_index(
+						index, index_duration)) or (index_duration.lower() == "single")):
+				continue
+
+			if only_current_index and not (
+					(index_duration.lower() in ("weekly", "monthly") and index == target_index(
+						index, index_duration)) or (index_duration.lower() == "single")):
+				continue
+			try:
+				print("Merging segments for " + index)
+				# merge segments to improve search speed
+				es_new.indices.forcemerge(index=index, params={"max_num_segments": 1})
+			except Exception as ex:
+				print("Error: {0}".format(ex))
+				continue
 
 
 # Update index settings (replicas and refresh interval)
 def update_settings():
 	for index_pattern in indices:
 		index_duration = indices[index_pattern]
-		if exclude_current_index and (
-				(index_duration.lower() in ("weekly", "monthly") and index_pattern == target_index(
-					index_pattern, index_duration)) or (index_duration.lower() == "single") or (
-						'quarantine' in index_pattern.lower())):
-			print("Skipping current index " + index_pattern)
-			continue
 		new_index = trim_index(index_pattern)
 		print("\nUpdating index settings for " + new_index)
-		for index in sorted(es_new.indices.get(new_index)):
+		for index in sorted(es_new.indices.get(new_index, params={"ignore_unavailable": 'true'})):
+			if exclude_current_index and (
+					(index_duration.lower() in ("weekly", "monthly") and index == target_index(
+						index, index_duration)) or (index_duration.lower() == "single")):
+				continue
+
+			if only_current_index and not (
+					(index_duration.lower() in ("weekly", "monthly") and index == target_index(
+						index, index_duration)) or (index_duration.lower() == "single")):
+				continue
 			# set refresh interval and replica count on the new index
 			es_new.indices.put_settings(index=index,
 										body={
