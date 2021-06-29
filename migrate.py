@@ -234,13 +234,49 @@ def migrate():
 	if exclude_current_index:
 		add_index_templates()
 	for index_pattern in indices.keys():
-		print("\n" + cur_time() + " - Migrating " + index_pattern)
+		print("\nMigrating " + index_pattern + " " + cur_time())
 		old_cat_indices = []
 		if es_old.indices.exists(index=index_pattern):
 			old_cat_indices = es_old.cat.indices(index_pattern, params={"format": "json"})
 
+		# validate counts if index exists in target, delete index in target when counts does not match
 		new_cat_indices = []
 		index_duration = indices[index_pattern]
+		if index_duration == "weekly":
+			if es_new.indices.exists(index=index_pattern):
+				new_cat_indices = es_new.cat.indices(index_pattern, params={"format": "json"})
+		elif index_duration == "monthly":
+			if not only_current_index:
+				valid = verify_index(index_pattern, index_duration)
+				if not valid:
+					user_res = query_yes_no(
+						"Do you want to delete count mismatched monthly index " + index_pattern + " and retry?")
+					if user_res:
+						print("Deleting count mismatched monthly index " + index_pattern)
+						if es_new.indices.exists(index=index_pattern):
+							es_new.indices.delete(index_pattern)
+					else:
+						user_res = query_yes_no(
+							"Do you want to reindex mismatched monthly index " + index_pattern + "?")
+						if not user_res:
+							continue
+				else:
+					continue
+		elif index_duration == "single":
+			if not only_current_index:
+				valid = verify_single_index(index_pattern) if not only_current_index else True
+				if not valid:
+					user_res = query_yes_no(
+						"Do you want to delete count mismatched single index " + index_pattern + " and retry?")
+					if user_res:
+						print("Deleting count mismatched single index " + index_pattern)
+						if es_new.indices.exists(index=index_pattern):
+							es_new.indices.delete(index_pattern)
+					else:
+						continue
+				else:
+					continue
+
 		old_index_counts = {}
 		for index_stat in old_cat_indices:
 			index = trim_index(index_stat['index'])
@@ -270,7 +306,7 @@ def migrate():
 															   total_indexed_count,
 															   total_old_index_count)
 				else:
-					print("Skipping old index " + index)
+					# print("Skipping old index " + index)
 					continue
 			else:
 				total_indexed_count = migrate_single_index(index, new_index_counts, old_index_counts,
